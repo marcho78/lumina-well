@@ -5,31 +5,50 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="theme-color" content="#07060b" />
+  <meta name="theme-color" content="#080807" />
   <title>LUMINA — The Well of Lights</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/marcho78/lumina-well@f782109e42c26ca66b0a2ae02c88c57cc290589f/app.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Jost:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./app.css" />
 </head>
 <body>
   <div id="rotate"><div class="rotate-card"><div class="rotate-glyph">↻</div><p>Turn your phone upright</p><span>LUMINA is forged for portrait</span></div></div>
   <div id="app">
     <div class="vignette"></div><div class="grain"></div><canvas id="bg"></canvas>
-    <section id="screen-boot" class="screen on"><div class="boot-mark">✦</div><h1 class="logo">LUMINA</h1><p class="tag">the well of lights</p><div class="boot-bar"><i></i></div></section>
+    <section id="screen-boot" class="screen on">
+      <div class="well boot-well" aria-hidden><i class="ring r1"></i><i class="ring r2"></i><i class="ring r3"></i><i class="core"></i></div>
+      <span class="ornament">✦  ✦  ✦</span>
+      <h1 class="logo">LUMINA</h1>
+      <p class="tag">the well of lights</p>
+      <div class="boot-bar"><i></i></div>
+    </section>
     <section id="screen-menu" class="screen">
-      <header class="topbar"><button class="icon-btn" id="btn-settings">⚙</button><div class="currency" id="menu-shards">✦ 0</div></header>
-      <div class="menu-hero"><div class="logo-wrap"><div class="pulse-ring"></div><div class="pulse-ring delay"></div><h1 class="logo">LUMINA</h1></div><p class="tag">drop. cascade. ascend.</p></div>
+      <header class="topbar">
+        <div class="icon-row">
+          <button class="icon-btn" id="btn-settings">⚙</button>
+        </div>
+        <div class="currency" id="menu-shards">◆ 0</div>
+      </header>
+      <div class="menu-hero">
+        <span class="ornament">✦  ✦  ✦</span>
+        <h1 class="logo">LUMINA</h1>
+        <p class="tag">drop · cascade · ascend</p>
+        <div class="well" aria-hidden><i class="ring r1"></i><i class="ring r2"></i><i class="ring r3"></i><i class="core"></i></div>
+        <p class="hint-foot" id="menu-hint">Ember Hollow</p>
+      </div>
       <div class="menu-stats" id="menu-stats"></div>
       <nav class="menu-nav">
         <button class="btn primary xl" id="btn-continue">Continue</button>
-        <button class="btn ghost" id="btn-realms">Realms</button>
-        <div class="row"><button class="btn" id="btn-endless">Endless</button><button class="btn" id="btn-daily">Daily Well</button></div>
-        <button class="btn subtle" id="btn-atelier">Atelier</button>
+        <button class="btn ghost" id="btn-realms">❖  Realms</button>
+        <div class="row">
+          <button class="btn" id="btn-endless">∞  Endless</button>
+          <button class="btn" id="btn-daily">☀  Daily Well</button>
+        </div>
+        <button class="btn subtle" id="btn-atelier">◆  Workshop</button>
       </nav>
-      <p class="hint-foot" id="menu-hint">World 1</p>
     </section>
-    <section id="screen-realms" class="screen"><header class="topbar"><button class="icon-btn" id="btn-realms-back">‹</button><h2>Realms</h2><div class="currency" id="realms-shards">✦ 0</div></header><div class="realm-list" id="realm-list"></div></section>
+    <section id="screen-realms" class="screen"><header class="topbar"><button class="icon-btn" id="btn-realms-back">‹</button><h2>Realms</h2><div class="currency" id="realms-shards">◆ 0</div></header><div class="realm-list" id="realm-list"></div></section>
     <section id="screen-levels" class="screen"><header class="topbar"><button class="icon-btn" id="btn-levels-back">‹</button><h2 id="levels-title">Ember Hollow</h2><div class="currency" id="levels-progress">0/40</div></header><div class="level-grid" id="level-grid"></div></section>
     <section id="screen-play" class="screen">
       <header class="play-hud"><button class="icon-btn" id="btn-pause">Ⅱ</button><div class="hud-mid"><div class="hud-level" id="hud-level">LUMINA 1</div><div class="hud-goal"><div class="goal-bar"><i id="goal-fill"></i></div><span id="hud-score">0 / 1000</span></div></div><div class="hud-moves" id="hud-moves">24</div></header>
@@ -37,11 +56,11 @@
       <footer class="play-dock"><div class="queue" id="queue"></div><div class="tools"><button class="tool" id="tool-shuffle"><span>⟳</span><em id="shuffle-n">2</em></button><button class="tool" id="tool-crush"><span>✧</span><em id="crush-n">1</em></button><button class="tool" id="tool-nova"><span>✸</span><em id="nova-n">0</em></button></div></footer>
       <div id="combo-banner"></div><div id="play-hint">Tap a column to drop the glowing orb</div>
     </section>
-    <section id="screen-result" class="screen"><div class="result-card"><p class="result-kicker" id="result-kicker">cleared</p><h2 id="result-title">LUMINA 1</h2><div class="stars" id="result-stars">★★★</div><ul class="result-stats" id="result-stats"></ul><div class="result-reward" id="result-reward"></div><div class="col"><button class="btn primary xl" id="btn-next">Next Well</button><div class="row"><button class="btn" id="btn-retry">Retry</button><button class="btn ghost" id="btn-result-menu">Realms</button></div></div></div></section>
+    <section id="screen-result" class="screen"><div class="result-card"><p class="result-kicker" id="result-kicker">cleared</p><h2 id="result-title">LUMINA 1</h2><div class="stars" id="result-stars">★★★</div><ul class="result-stats" id="result-stats"></ul><div class="result-reward" id="result-reward"></div><div class="col"><button class="btn primary xl" id="btn-next">Next Well ▸</button><div class="row"><button class="btn" id="btn-retry">↻  Retry</button><button class="btn ghost" id="btn-result-menu">❖  Realms</button></div></div></div></section>
     <section id="screen-pause" class="screen overlay"><div class="pause-card"><h2>Suspended</h2><p id="pause-copy">The well holds its breath.</p><button class="btn primary xl" id="btn-resume">Resume</button><button class="btn" id="btn-pause-retry">Restart Well</button><button class="btn ghost" id="btn-pause-quit">Leave</button></div></section>
-    <section id="screen-atelier" class="screen"><header class="topbar"><button class="icon-btn" id="btn-atelier-back">‹</button><h2>Atelier</h2><div class="currency" id="atelier-shards">✦ 0</div></header><p class="section-lead">Spend shards to deepen the well.</p><div class="upgrade-list" id="upgrade-list"></div></section>
-    <section id="screen-settings" class="screen overlay"><div class="pause-card"><h2>Settings</h2><p class="section-lead" style="text-align:left">Tap a column to drop. Match 3+ same color. Beat the score before moves run out.</p><label class="toggle"><span>Sound</span><input type="checkbox" id="opt-sfx" checked /></label><label class="toggle"><span>Haptics</span><input type="checkbox" id="opt-haptic" checked /></label><label class="toggle"><span>Screen shake</span><input type="checkbox" id="opt-shake" checked /></label><button class="btn" id="btn-reset">Reset progress</button><button class="btn primary" id="btn-settings-close">Done</button></div></section>
+    <section id="screen-atelier" class="screen"><header class="topbar"><button class="icon-btn" id="btn-atelier-back">‹</button><h2>Workshop</h2><div class="currency" id="atelier-shards">◆ 0</div></header><p class="section-lead">Spend shards here. What you buy stays with you in every well.</p><div class="upgrade-list" id="upgrade-list"></div></section>
+    <section id="screen-settings" class="screen overlay"><div class="pause-card"><h2>Settings</h2><p class="section-lead" style="text-align:center">Tap a column to drop. Match 3+ same color. Beat the score before moves run out.</p><label class="toggle"><span>Sound</span><input type="checkbox" id="opt-sfx" checked /></label><label class="toggle"><span>Haptics</span><input type="checkbox" id="opt-haptic" checked /></label><label class="toggle"><span>Screen shake</span><input type="checkbox" id="opt-shake" checked /></label><button class="btn" id="btn-reset">Reset progress</button><button class="btn primary" id="btn-settings-close">Done</button></div></section>
   </div>
-  <script src="https://cdn.jsdelivr.net/gh/marcho78/lumina-well@f782109e42c26ca66b0a2ae02c88c57cc290589f/app.js"></script>
+  <script src="./app.js"></script>
 </body>
 </html>
