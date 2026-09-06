@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { CAMPAIGN, LEVELS_PER_REALM, REALMS, UPGRADES } from "./constants";
-import { beep, chord, haptic, unlockAudio } from "./audio";
+import { beep, chord, haptic, shatter, unlockAudio } from "./audio";
 import {
   applyCascade,
   checkEnd,
@@ -48,6 +48,7 @@ type GameStore = {
   go: (s: Screen) => void;
   start: (level: number, mode: Mode, opts?: { tutorial?: boolean }) => void;
   startTutorial: () => void;
+  skipFtue: (beat: FtueBeat) => void;
   ftueAdvance: () => void;
   drop: (col: number) => Promise<void>;
   land: () => Promise<void>;
@@ -139,14 +140,43 @@ function deny(get: () => GameStore, set: (p: Partial<GameStore>) => void, msg: s
   }, 1400);
 }
 
-async function resolveBoard(get: () => GameStore, set: (p: Partial<GameStore>) => void, extra?: BurstEvent[]) {
+function specialBanner(events: BurstEvent[]) {
+  if (events.some((b) => b.kind === "nova")) return "NOVA";
+  if (events.some((b) => b.kind === "bomb")) return "BURST";
+  if (events.some((b) => b.kind === "row" || b.kind === "col")) return "LINE";
+  if (events.some((b) => b.kind === "crush")) return "SHATTER";
+  return null;
+}
+
+function fxWait(events: BurstEvent[], ftue: boolean) {
+  if (events.some((b) => b.kind === "nova")) return 780;
+  if (events.some((b) => b.kind === "crush")) return events.some((b) => b.ice) ? 920 : 620;
+  if (events.some((b) => b.kind === "row" || b.kind === "col" || b.kind === "bomb")) return 560;
+  return ftue ? 420 : 220;
+}
+
+async function resolveBoard(
+  get: () => GameStore,
+  set: (p: Partial<GameStore>) => void,
+  extra?: BurstEvent[],
+  opts?: { skipFx?: boolean },
+) {
   const sfx = get().save.settings.sfx;
   const hap = get().save.settings.haptic;
   const bonus = get().save.upgrades.bonus;
-  let bursts = extra ?? [];
   let waves = 0;
   const session = get().session;
   if (!session) return;
+  if (extra?.length && !opts?.skipFx) {
+    const label = specialBanner(extra);
+    if (extra.some((b) => b.kind === "nova")) chord([520, 660, 880, 1040], sfx);
+    else if (extra.some((b) => b.kind === "row" || b.kind === "col")) beep(640, 0.16, "sine", 0.06, 920, sfx);
+    else if (extra.some((b) => b.kind === "crush")) shatter(sfx);
+    else beep(500, 0.12, "triangle", 0.05, 720, sfx);
+    haptic(extra.some((b) => b.kind === "nova" || b.kind === "crush") ? 28 : 16, hap);
+    set({ lastBursts: extra.slice(-40), banner: label });
+    await wait(fxWait(extra, Boolean(session.spec.ftue)));
+  }
   while (true) {
     const cur = get().session;
     if (!cur) return;
@@ -163,7 +193,6 @@ async function resolveBoard(get: () => GameStore, set: (p: Partial<GameStore>) =
       break;
     }
     waves++;
-    bursts = bursts.concat(step.bursts);
     get().save.stats.bestCombo = Math.max(get().save.stats.bestCombo, step.combo);
     beep(380 + step.combo * 90, 0.12, "triangle", 0.05, 680 + step.combo * 40, sfx);
     haptic(10 + step.combo * 8, hap);
@@ -173,11 +202,11 @@ async function resolveBoard(get: () => GameStore, set: (p: Partial<GameStore>) =
     ].slice(-8);
     set({
       session: cloneSession(cur),
-      lastBursts: bursts.slice(-40),
-      banner: cur.spec.ftue ? null : step.banner,
+      lastBursts: step.bursts.slice(-40),
+      banner: cur.spec.ftue ? specialBanner(step.bursts) ?? step.banner : step.banner,
       floats,
     });
-    await wait(cur.spec.ftue ? 420 : 170);
+    await wait(fxWait(step.bursts, Boolean(cur.spec.ftue)));
   }
   const done = get().session;
   if (!done) return;
@@ -303,6 +332,14 @@ export const useGame = create<GameStore>((set, get) => ({
     }
   },
   startTutorial: () => get().start(1, "campaign", { tutorial: true }),
+  skipFtue: (beat) => {
+    if (coachTimer) window.clearTimeout(coachTimer);
+    get().start(1, "campaign", { tutorial: true });
+    if (coachTimer) window.clearTimeout(coachTimer);
+    const session = get().session;
+    if (!session) return;
+    set({ ...applyBeat(session, beat), resolving: false, lastBursts: [], floats: [], falling: null });
+  },
   ftueAdvance: () => {
     const session = get().session;
     if (!session?.spec.ftue || !get().ftueHold) return;
@@ -408,13 +445,27 @@ export const useGame = create<GameStore>((set, get) => ({
       deny(get, set, "Stone cannot be crushed", c);
       return;
     }
-    const color = cell.color;
-    session.board[r][c] = null;
-    gravity(session.board);
-    session.tools.crush--;
-    haptic(12, save.settings.haptic);
-    set({ session: cloneSession(session), selectingCrush: false, resolving: true, lastBursts: [{ r, c, color }] });
-    await resolveBoard(get, set, [{ r, c, color }]);
+    const extra: BurstEvent[] = [{ r, c, color: Math.max(0, cell.color), kind: "crush", ice: cell.type === "ice" }];
+    const ice = cell.type === "ice";
+    shatter(save.settings.sfx);
+    haptic(ice ? 40 : 22, save.settings.haptic);
+    set({
+      selectingCrush: false,
+      resolving: true,
+      lastBursts: extra,
+      banner: ice ? "SHATTER" : "CRUSH",
+      hint: null,
+    });
+    await wait(ice ? 880 : 520);
+    const cur = get().session;
+    if (!cur) return;
+    if (cur.board[r][c]) {
+      cur.board[r][c] = null;
+      gravity(cur.board);
+      cur.tools.crush = Math.max(0, cur.tools.crush - 1);
+    }
+    set({ session: cloneSession(cur) });
+    await resolveBoard(get, set, extra, { skipFx: true });
     if (get().session?.spec.ftue) return;
     if (!get().session?.won && !get().session?.lost) set({ resolving: false });
   },

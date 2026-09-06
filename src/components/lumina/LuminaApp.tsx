@@ -490,7 +490,11 @@ function PlayScreen() {
         onDrop={onDrop}
         onCrush={onCrush}
         onLanded={onLanded}
-        className={shake && resolving && session.combo > 1 ? "shake-well" : undefined}
+        className={
+          shake && resolving && (session.combo > 1 || lastBursts.some((b) => b.kind === "nova" || b.kind === "bomb" || b.kind === "crush"))
+            ? "shake-well"
+            : undefined
+        }
       >
         {floats.map((f) => (
           <span
@@ -558,15 +562,15 @@ function PauseScreen() {
   const retry = useGame((s) => s.retry);
   return (
     <ScreenShell className="home items-center justify-center">
-      <div className="ceremony-frame w-full">
-        <div className="ceremony-inner">
+      <div className="ceremony-frame mx-auto w-full">
+        <div className="ceremony-inner text-center">
           <div className="ceremony-kicker">
             <i />
             <span>The Well</span>
             <i />
           </div>
-          <h2 className="shop-title">Suspended</h2>
-          <p className="shop-lead">The well holds its breath.</p>
+          <h2 className="ceremony-title">Paused</h2>
+          <p className="shop-lead mx-auto text-center">The well holds its breath.</p>
           <div className="ceremony-actions">
             <button type="button" className="ceremony-cta" onClick={() => go("play")}>
               Resume
@@ -709,6 +713,7 @@ export function LuminaApp() {
       getSession: () => useGame.getState().session,
       start: (level: number, mode: "campaign" | "endless" | "daily") => useGame.getState().start(level, mode),
       startTutorial: () => useGame.getState().startTutorial(),
+      skipFtue: (beat: string) => useGame.getState().skipFtue(beat as import("@/game/ftue").FtueBeat),
       ftueAdvance: () => useGame.getState().ftueAdvance(),
       qc: () => qcLessons(),
       drop: (col: number) => {

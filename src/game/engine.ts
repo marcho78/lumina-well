@@ -300,7 +300,8 @@ function chipNeighbors(board: (Orb | null)[][], hit: Set<string>) {
   });
 }
 
-export type BurstEvent = { r: number; c: number; color: number };
+export type BurstKind = "burst" | "row" | "col" | "bomb" | "nova" | "crush";
+export type BurstEvent = { r: number; c: number; color: number; kind?: BurstKind; ice?: boolean };
 export type CascadeResult = {
   bursts: BurstEvent[];
   scoreGain: number;
@@ -340,7 +341,7 @@ export function applyCascade(session: Session, bonus: number): CascadeResult | n
   hit.forEach((key) => {
     const [r, c] = key.split(",").map(Number);
     const o = session.board[r][c];
-    bursts.push({ r, c, color: o ? Math.max(0, o.color) : 0 });
+    bursts.push({ r, c, color: o ? Math.max(0, o.color) : 0, kind: "burst" });
     if (!o) return;
     if (o.type === "ice" && o.hp > 1) {
       o.hp = 1;
@@ -375,7 +376,7 @@ export function detonate(session: Session, r: number, c: number, kind: Special, 
         if (session.board[rr][cc] && session.board[rr][cc]!.color === color) targets.push({ r: rr, c: cc });
   }
   session.score += targets.length * 55;
-  const bursts: BurstEvent[] = targets.map((t) => ({ ...t, color }));
+  const bursts: BurstEvent[] = targets.map((t) => ({ ...t, color, kind }));
   targets.forEach(({ r: rr, c: cc }) => {
     const o = session.board[rr][cc];
     if (!o || o.type === "stone") return;
