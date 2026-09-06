@@ -39,33 +39,26 @@ function NextTray({ queue, caption, danger = false }: { queue: Orb[]; caption?: 
   const next = queue[0];
   const rest = queue.slice(1);
   return (
-    <div className="mb-2">
+    <div className="play-tray">
       <div className="flex items-end justify-center gap-5">
         {next && (
           <div className="flex flex-col items-center gap-1">
-            <span className="text-xs font-medium uppercase tracking-widest text-accent">Next</span>
-            <div
-              className={cn(
-                "flex size-16 items-center justify-center rounded-full border border-accent bg-elevated",
-                caption && !danger && "lumina-pulse",
-              )}
-            >
+            <span className="play-cap">Next</span>
+            <div className={cn("play-orb next", caption && !danger && "lumina-pulse")}>
               <OrbChip orb={next} size={52} />
             </div>
           </div>
         )}
         {rest.map((orb, i) => (
           <div key={`${i}-${orb.color}-${orb.special ?? "n"}`} className="flex flex-col items-center gap-1">
-            <span className="text-xs uppercase tracking-widest text-subtle">{i === 0 ? "Then" : "After"}</span>
-            <div className="flex size-11 items-center justify-center rounded-full border border-border bg-surface">
+            <span className="play-cap">{i === 0 ? "Then" : "After"}</span>
+            <div className="play-orb">
               <OrbChip orb={orb} size={36} />
             </div>
           </div>
         ))}
       </div>
-      {caption ? (
-        <p className={cn("mt-2 text-center text-sm", danger ? "text-danger" : "text-fg")}>{caption}</p>
-      ) : null}
+      {caption ? <p className={cn("play-hint", danger && "danger")}>{caption}</p> : null}
     </div>
   );
 }
@@ -236,44 +229,57 @@ function RealmsScreen() {
   const save = useGame((s) => s.save);
   const go = useGame((s) => s.go);
   const setViewingRealm = useGame((s) => s.setViewingRealm);
+  const here = Math.min(REALMS.length - 1, Math.floor((Math.min(save.current, CAMPAIGN) - 1) / LEVELS_PER_REALM));
+  const fill = `${(here / Math.max(1, REALMS.length - 1)) * 100}%`;
   return (
-    <ScreenShell>
-      <TopBar
-        left={
-          <Button variant="quiet" size="icon" aria-label="Back" onClick={() => go("menu")}>
-            <ChevronLeft className="size-5" />
-          </Button>
-        }
-        title="Realms"
-        right={<ShardMark n={save.shards} />}
-      />
-      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pb-4">
+    <ScreenShell className="home">
+      <header className="home-top">
+        <button type="button" className="home-icon" aria-label="Back" onClick={() => go("menu")}>
+          ‹
+        </button>
+        <span className="home-realm">The Path</span>
+        <span className="home-wallet">◆ {save.shards}</span>
+      </header>
+      <h2 className="shop-title">Realms</h2>
+      <p className="shop-lead">Twelve realms. Forty wells each. Walk the path to the Source.</p>
+      <div className="realm-map">
+        <i className="realm-spine" style={{ ["--fill" as string]: fill }} />
         {REALMS.map((realm, i) => {
           const locked = !realmUnlocked(save, i);
           const { s, c } = starsOfRealm(save, i);
+          const on = i === here && !locked;
+          const done = c >= LEVELS_PER_REALM;
           return (
             <button
               key={realm.name}
+              type="button"
               disabled={locked}
               onClick={() => {
                 setViewingRealm(i);
                 go("levels");
               }}
-              className="flex w-full items-center gap-3 rounded-2xl border border-border bg-surface px-3 py-3 text-left disabled:opacity-40"
+              className={[
+                "realm-stop",
+                i % 2 === 0 ? "left" : "right",
+                locked ? "lock" : "",
+                on ? "here" : "",
+                done ? "done" : "",
+              ].join(" ")}
             >
-              <span className="realm-swatch size-11 shrink-0 rounded-xl" data-realm={i} />
-              <span className="min-w-0 flex-1">
-                <span className="block font-display text-base text-fg">{locked ? "Locked Realm" : realm.name}</span>
-                <span className="mt-0.5 block text-sm text-muted">
-                  {locked ? "Clear the previous realm to unseal." : realm.blurb}
-                </span>
+              <span className="realm-node" aria-hidden>
+                <i />
               </span>
-              <span className="shrink-0 text-right text-xs text-subtle">
-                {locked ? "—" : `${c}/40`}
+              <span className="realm-card">
+                <span className="realm-name">{locked ? "Sealed" : realm.name}</span>
+                <span className="realm-blurb">{locked ? "Clear the realm above to unseal." : realm.blurb}</span>
                 {!locked && (
-                  <span className="mt-1 flex justify-end">
-                    <Star className="size-3 fill-accent text-accent" />
-                    <span className="ml-0.5">{s}</span>
+                  <span className="realm-meta">
+                    <span className="realm-bar">
+                      <i style={{ width: `${(c / LEVELS_PER_REALM) * 100}%` }} />
+                    </span>
+                    <em>
+                      {c}/{LEVELS_PER_REALM} · ★ {s}
+                    </em>
                   </span>
                 )}
               </span>
@@ -294,16 +300,16 @@ function LevelsScreen() {
   const { s, c } = starsOfRealm(save, viewingRealm);
   const base = viewingRealm * LEVELS_PER_REALM + 1;
   return (
-    <ScreenShell>
-      <TopBar
-        left={
-          <Button variant="quiet" size="icon" aria-label="Back" onClick={() => go("realms")}>
-            <ChevronLeft className="size-5" />
-          </Button>
-        }
-        title={realm.name}
-        right={<span className="text-sm text-sand">{c}/40</span>}
-      />
+    <ScreenShell className="home">
+      <header className="home-top">
+        <button type="button" className="home-icon" aria-label="Back" onClick={() => go("realms")}>
+          ‹
+        </button>
+        <span className="home-realm">{realm.name}</span>
+        <span className="home-wallet">
+          {c}/{LEVELS_PER_REALM}
+        </span>
+      </header>
       <div className="plaque level-plaque min-h-0 w-full flex-1">
         <div className="flex items-center justify-between px-1">
           <p className="text-xs uppercase tracking-[0.28em] text-sand">Wells</p>
@@ -370,24 +376,22 @@ function PlayScreen() {
         ? `Endless ${session.spec.level}`
         : `${realmName(session.spec.level)} ${((session.spec.level - 1) % LEVELS_PER_REALM) + 1}`;
   return (
-    <ScreenShell className="px-3">
-      <header className="mb-2 flex items-center gap-2">
-        <Button variant="quiet" size="icon" aria-label="Pause" onClick={() => go("pause")}>
-          <Pause className="size-4" />
-        </Button>
+    <ScreenShell className="home play px-4">
+      <header className="play-hud">
+        <button type="button" className="home-icon" aria-label="Pause" onClick={() => go("pause")}>
+          Ⅱ
+        </button>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-center text-xs uppercase tracking-widest text-muted">{title}</div>
-          <div className="score-rail mt-1.5">
-            <i className="score-fill" style={{ width: `${pct}%` }} />
+          <div className="play-title">{title}</div>
+          <div className="play-rail">
+            <i style={{ width: `${pct}%` }} />
           </div>
-          <div className="mt-1 text-center text-xs tabular-nums text-subtle">
-            <span className="text-accent">{session.score.toLocaleString()}</span>
+          <div className="play-score">
+            <b>{session.score.toLocaleString()}</b>
             <span> / {session.spec.target.toLocaleString()}</span>
           </div>
         </div>
-        <div className={cn("w-12 text-center font-display text-2xl", session.moves <= 5 ? "text-danger" : "text-fg")}>
-          {session.moves}
-        </div>
+        <div className={cn("play-moves", session.moves <= 5 && "low")}>{session.moves}</div>
       </header>
       <NextTray
         queue={session.queue}
@@ -402,7 +406,7 @@ function PlayScreen() {
                 : null
         }
       />
-      <div className={cn("relative min-h-0 flex-1", save.settings.shake && resolving && session.combo > 1 && "shake-well")}>
+      <div className={cn("play-well", save.settings.shake && resolving && session.combo > 1 && "shake-well")}>
         <BoardCanvas
           session={session}
           selectingCrush={selectingCrush}
@@ -417,51 +421,34 @@ function PlayScreen() {
         {floats.map((f) => (
           <span
             key={f.id}
-            className="float-pts pointer-events-none absolute font-display text-sm text-accent"
+            className="float-pts pointer-events-none absolute text-sm"
             style={{ left: `${((f.c + 0.35) / 6) * 100}%`, top: `${((f.r + 0.1) / 8) * 100}%` }}
           >
             +{f.n}
           </span>
         ))}
-        {banner && (
-          <div className="combo-banner pointer-events-none absolute inset-x-0 top-8 text-center font-display text-2xl tracking-widest text-accent">
-            {banner}
-          </div>
-        )}
+        {banner && <div className="combo-banner pointer-events-none absolute inset-x-0 top-8 text-center">{banner}</div>}
       </div>
-      <footer className="mt-2 flex items-center justify-center gap-2">
-        <Button
-          variant="quiet"
-          size="tool"
-          disabled={session.tools.shuffle <= 0 || resolving}
-          onClick={shuffle}
-          aria-label="Shuffle queue"
-        >
-          <RefreshCw className="size-4" />
-          <em className="not-italic text-xs text-muted">{session.tools.shuffle}</em>
-        </Button>
-        <Button
-          variant={selectingCrush ? "primary" : "quiet"}
-          size="tool"
+      <footer className="play-tools">
+        <button type="button" className="play-tool" disabled={session.tools.shuffle <= 0 || resolving} onClick={shuffle} aria-label="Shuffle queue">
+          <span>↻</span>
+          <em>{session.tools.shuffle}</em>
+        </button>
+        <button
+          type="button"
+          className={selectingCrush ? "play-tool on" : "play-tool"}
           disabled={session.tools.crush <= 0 || resolving}
           onClick={toggleCrush}
           aria-label="Crush a light"
         >
-          <Crosshair className="size-4" />
-          <em className="not-italic text-xs text-muted">{session.tools.crush}</em>
-        </Button>
-        <Button
-          variant="quiet"
-          size="tool"
-          disabled={session.tools.nova <= 0 || resolving}
-          onClick={() => void fireNova()}
-          aria-label="Nova"
-        >
-          <Sparkle className="size-4" />
-          <em className="not-italic text-xs text-muted">{session.tools.nova}</em>
-        </Button>
+          <span>+</span>
+          <em>{session.tools.crush}</em>
+        </button>
+        <button type="button" className="play-tool" disabled={session.tools.nova <= 0 || resolving} onClick={() => void fireNova()} aria-label="Nova">
+          <span>✦</span>
+          <em>{session.tools.nova}</em>
+        </button>
       </footer>
-      {selectingCrush && <p className="mt-2 text-center text-sm text-danger">Tap a light to crush it</p>}
     </ScreenShell>
   );
 }
@@ -470,24 +457,30 @@ function PauseScreen() {
   const go = useGame((s) => s.go);
   const retry = useGame((s) => s.retry);
   return (
-    <ScreenShell className="items-center justify-center bg-bg/80">
-      <div className="dialog-panel w-full">
-        <h2 className="text-center font-display text-3xl">Suspended</h2>
-        <p className="mt-2 text-center text-sm text-muted">The well holds its breath.</p>
-        <div className="mt-6 flex flex-col gap-2">
-          <Button variant="primary" size="lg" className="w-full" onClick={() => go("play")}>
-            Resume
-          </Button>
-          <Button variant="quiet" className="w-full" onClick={() => go("help")}>
-            <CircleHelp className="size-4" />
-            How to Play
-          </Button>
-          <Button variant="quiet" className="w-full" onClick={retry}>
-            Restart Well
-          </Button>
-          <Button variant="ghost" className="w-full" onClick={() => go("menu")}>
-            Leave
-          </Button>
+    <ScreenShell className="home items-center justify-center">
+      <div className="ceremony-frame w-full">
+        <div className="ceremony-inner">
+          <div className="ceremony-kicker">
+            <i />
+            <span>The Well</span>
+            <i />
+          </div>
+          <h2 className="shop-title">Suspended</h2>
+          <p className="shop-lead">The well holds its breath.</p>
+          <div className="ceremony-actions">
+            <button type="button" className="ceremony-cta" onClick={() => go("play")}>
+              Resume
+            </button>
+            <button type="button" className="ceremony-ghost" onClick={() => go("help")}>
+              How to Play
+            </button>
+            <button type="button" className="ceremony-ghost" onClick={retry}>
+              Restart Well
+            </button>
+            <button type="button" className="ceremony-ghost" onClick={() => go("menu")}>
+              Leave
+            </button>
+          </div>
         </div>
       </div>
     </ScreenShell>

@@ -118,17 +118,17 @@ export function drawBoard(
   const h = ROWS * cell;
   ctx.clearRect(0, 0, w, h);
   roundRect(ctx, 0, 0, w, h, Math.min(16, cell * 0.28));
-  ctx.fillStyle = "#121214";
+  ctx.fillStyle = "#0c0b09";
   ctx.fill();
-  ctx.strokeStyle = "rgba(244,244,245,0.1)";
-  ctx.lineWidth = 1;
+  ctx.strokeStyle = "rgba(217,184,120,0.32)";
+  ctx.lineWidth = 1.5;
   ctx.stroke();
   const rad = Math.max(6, cell / 2 - pad);
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
       const x = c * cell;
       const y = r * cell;
-      ctx.fillStyle = (r + c) % 2 ? "rgba(255,255,255,0.018)" : "rgba(255,255,255,0.04)";
+      ctx.fillStyle = (r + c) % 2 ? "rgba(217,184,120,0.035)" : "rgba(217,184,120,0.07)";
       ctx.fillRect(x + 1, y + 1, cell - 2, cell - 2);
       const orb = session.board[r][c];
       if (orb) drawOrb(ctx, x + cell / 2, y + cell / 2, rad, orb);
@@ -146,7 +146,7 @@ export function drawBoard(
   if (!animating && !session.won && !session.lost && !selectingCrush && session.queue[0]) {
     const top = columnTop(session.board, ghostCol);
     if (top > 0) {
-      ctx.fillStyle = "rgba(200,204,212,0.1)";
+      ctx.fillStyle = "rgba(217,184,120,0.12)";
       ctx.fillRect(ghostCol * cell, 0, cell, ROWS * cell);
       const cx = ghostCol * cell + cell / 2;
       const cy = (top - 1) * cell + cell / 2;
