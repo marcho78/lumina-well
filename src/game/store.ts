@@ -16,6 +16,7 @@ import {
 } from "./engine";
 import { clampCampaign, defaultSave, loadSave, persistSave } from "./save";
 import { dailyLevel, dayKey } from "./rng";
+import { applyLesson, HOLD, nextBeat, type FtueBeat } from "./ftue";
 import type { BurstEvent, CascadeResult } from "./engine";
 import type { Mode, SaveState, Screen, Session } from "./types";
 
@@ -37,10 +38,17 @@ type GameStore = {
   floats: FloatPts[];
   lastBursts: BurstEvent[];
   lastResult: { win: boolean; stars: number; reward: number; newBest: boolean } | null;
+  coachTitle: string | null;
+  coachBody: string | null;
+  guideCol: number | null;
+  guideCell: { r: number; c: number } | null;
+  ftueHold: boolean;
   persist: () => void;
   hydrate: () => void;
   go: (s: Screen) => void;
-  start: (level: number, mode: Mode) => void;
+  start: (level: number, mode: Mode, opts?: { tutorial?: boolean }) => void;
+  startTutorial: () => void;
+  ftueAdvance: () => void;
   drop: (col: number) => Promise<void>;
   land: () => Promise<void>;
   crushAt: (c: number, r: number) => Promise<void>;
@@ -58,7 +66,67 @@ type GameStore = {
 let floatId = 1;
 let dropId = 1;
 let hintTimer = 0;
+let coachTimer = 0;
+let ftueAction: "look" | "drop" | "crush" | "shuffle" | "read" = "look";
+let ftueWrong = "";
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function applyBeat(session: Session, beat: FtueBeat) {
+  const meta = applyLesson(session, beat);
+  ftueAction = meta.action;
+  ftueWrong = meta.wrong;
+  return {
+    session: cloneSession(session),
+    coachTitle: meta.title,
+    coachBody: meta.body,
+    guideCol: meta.guideCol,
+    guideCell: meta.guideCell,
+    ftueHold: meta.hold,
+    selectingCrush: false,
+    hint: null,
+    flashCol: null,
+    falling: null,
+    banner: null,
+  };
+}
+
+async function afterFtueResolve(
+  get: () => GameStore,
+  set: (p: Partial<GameStore>) => void,
+  waves: number,
+  detonated: boolean,
+) {
+  const session = get().session;
+  if (!session?.spec.ftue) return;
+  const beat = (session.ftueBeat || "burst") as FtueBeat;
+  const ok =
+    beat === "crush"
+      ? detonated
+      : beat === "cascade"
+        ? waves >= 2
+        : beat === "line" || beat === "nova"
+          ? detonated || waves >= 1
+          : waves >= 1;
+  if (!ok) {
+    set({
+      ...applyBeat(session, beat),
+      coachTitle: "Try that again",
+      coachBody: ftueWrong || "Same color, touching. Drop NEXT on the glowing column.",
+      resolving: false,
+    });
+    return;
+  }
+  const hold = HOLD[beat];
+  set({
+    session: cloneSession(session),
+    coachTitle: hold?.title ?? "Good",
+    coachBody: hold?.body ?? "Tap Next to continue.",
+    guideCol: null,
+    guideCell: null,
+    ftueHold: true,
+    resolving: false,
+  });
+}
 
 function deny(get: () => GameStore, set: (p: Partial<GameStore>) => void, msg: string, col?: number) {
   const save = get().save;
@@ -76,6 +144,7 @@ async function resolveBoard(get: () => GameStore, set: (p: Partial<GameStore>) =
   const hap = get().save.settings.haptic;
   const bonus = get().save.upgrades.bonus;
   let bursts = extra ?? [];
+  let waves = 0;
   const session = get().session;
   if (!session) return;
   while (true) {
@@ -83,7 +152,7 @@ async function resolveBoard(get: () => GameStore, set: (p: Partial<GameStore>) =
     if (!cur) return;
     const step: CascadeResult | null = applyCascade(cur, bonus);
     if (!step) {
-      if (countLights(cur.board) < 16) {
+      if (countLights(cur.board) < 16 && !cur.spec.ftue) {
         const added = rainLights(cur, 20);
         if (added) {
           set({ session: cloneSession(cur), banner: "the well fills" });
@@ -93,6 +162,7 @@ async function resolveBoard(get: () => GameStore, set: (p: Partial<GameStore>) =
       }
       break;
     }
+    waves++;
     bursts = bursts.concat(step.bursts);
     get().save.stats.bestCombo = Math.max(get().save.stats.bestCombo, step.combo);
     beep(380 + step.combo * 90, 0.12, "triangle", 0.05, 680 + step.combo * 40, sfx);
@@ -104,13 +174,17 @@ async function resolveBoard(get: () => GameStore, set: (p: Partial<GameStore>) =
     set({
       session: cloneSession(cur),
       lastBursts: bursts.slice(-40),
-      banner: step.banner,
+      banner: cur.spec.ftue ? null : step.banner,
       floats,
     });
-    await wait(170);
+    await wait(cur.spec.ftue ? 420 : 170);
   }
   const done = get().session;
   if (!done) return;
+  if (done.spec.ftue) {
+    await afterFtueResolve(get, set, waves, (extra?.length ?? 0) > 0);
+    return;
+  }
   checkEnd(done);
   set({ session: cloneSession(done) });
   if (done.won || done.lost) {
@@ -130,22 +204,28 @@ function finish(get: () => GameStore, set: (p: Partial<GameStore>) => void, win:
   const newBest = win && stars > prev;
   let reward = 0;
   if (win) {
-    save.stats.clears++;
-    if (mode === "campaign") {
-      save.stars[level] = Math.max(prev, stars);
-      if (level >= save.farthest) save.farthest = clampCampaign(level + 1);
-      save.current = clampCampaign(level + 1);
-      reward = 8 + stars * 6 + session.spec.world * 2 + Math.floor(session.combo);
-      if (stars > prev) reward += (stars - prev) * 10;
-    } else if (mode === "daily") {
-      const key = dayKey();
-      if (save.daily.key !== key || !save.daily.cleared) {
-        reward = 40 + stars * 15;
-        save.daily = { key, cleared: true };
-      } else reward = 8;
-    } else reward = 6 + stars * 4;
-    save.shards += reward;
-    chord([523, 659, 784, 1046], save.settings.sfx);
+    const firstTutorial = session.spec.ftue && save.ftue !== "done";
+    if (session.spec.ftue) save.ftue = "done";
+    if (session.spec.ftue && !firstTutorial) {
+      chord([523, 659, 784, 1046], save.settings.sfx);
+    } else {
+      save.stats.clears++;
+      if (mode === "campaign") {
+        save.stars[level] = Math.max(prev, stars);
+        if (level >= save.farthest) save.farthest = clampCampaign(level + 1);
+        save.current = clampCampaign(level + 1);
+        reward = 8 + stars * 6 + session.spec.world * 2 + Math.floor(session.combo);
+        if (stars > prev) reward += (stars - prev) * 10;
+      } else if (mode === "daily") {
+        const key = dayKey();
+        if (save.daily.key !== key || !save.daily.cleared) {
+          reward = 40 + stars * 15;
+          save.daily = { key, cleared: true };
+        } else reward = 8;
+      } else reward = 6 + stars * 4;
+      save.shards += reward;
+      chord([523, 659, 784, 1046], save.settings.sfx);
+    }
   } else {
     beep(140, 0.3, "sawtooth", 0.05, 70, save.settings.sfx);
   }
@@ -174,16 +254,27 @@ export const useGame = create<GameStore>((set, get) => ({
   floats: [],
   lastBursts: [],
   lastResult: null,
+  coachTitle: null,
+  coachBody: null,
+  guideCol: null,
+  guideCell: null,
+  ftueHold: false,
   persist: () => persistSave(get().save),
-  hydrate: () => set({ save: loadSave() }),
+  hydrate: () => {
+    const save = loadSave();
+    set({ save, screen: save.ftue === "done" ? "menu" : "boot" });
+  },
   go: (s) => set({ screen: s, prevScreen: get().screen === "pause" ? get().prevScreen : get().screen }),
   setViewingRealm: (n) => set({ viewingRealm: n }),
-  start: (level, mode) => {
+  start: (level, mode, opts) => {
     unlockAudio();
     const save = get().save;
-    save.stats.plays++;
+    const tutorial = Boolean(opts?.tutorial) || (save.ftue !== "done" && mode === "campaign" && level === 1);
+    if (!tutorial) save.stats.plays++;
     persistSave(save);
-    const session = createSession(level, mode, save);
+    const session = createSession(level, mode, save, tutorial);
+    if (coachTimer) window.clearTimeout(coachTimer);
+    const lesson = tutorial ? applyBeat(session, "next") : null;
     set({
       save: { ...save, stats: { ...save.stats } },
       session,
@@ -197,11 +288,50 @@ export const useGame = create<GameStore>((set, get) => ({
       floats: [],
       lastBursts: [],
       lastResult: null,
+      coachTitle: lesson?.coachTitle ?? null,
+      coachBody: lesson?.coachBody ?? null,
+      guideCol: lesson?.guideCol ?? null,
+      guideCell: lesson?.guideCell ?? null,
+      ftueHold: false,
     });
+    if (tutorial) {
+      coachTimer = window.setTimeout(() => {
+        const cur = get().session;
+        if (!cur?.spec.ftue || cur.ftueBeat !== "next") return;
+        set(applyBeat(cur, "burst"));
+      }, 1600);
+    }
+  },
+  startTutorial: () => get().start(1, "campaign", { tutorial: true }),
+  ftueAdvance: () => {
+    const session = get().session;
+    if (!session?.spec.ftue || !get().ftueHold) return;
+    const nxt = nextBeat(session.ftueBeat as FtueBeat);
+    if (!nxt) {
+      session.won = true;
+      finish(get, set, true);
+      return;
+    }
+    if (coachTimer) window.clearTimeout(coachTimer);
+    set({ ...applyBeat(session, nxt), floats: [], lastBursts: [] });
   },
   drop: async (col) => {
-    const { session, resolving, selectingCrush, save, falling } = get();
+    const { session, resolving, selectingCrush, save, falling, ftueHold } = get();
     if (!session || session.won || session.lost || selectingCrush) return;
+    if (session.spec.ftue) {
+      if (ftueHold) {
+        get().ftueAdvance();
+        return;
+      }
+      if (ftueAction !== "drop") {
+        deny(get, set, ftueWrong || "Not a drop — use the tool below.", col);
+        return;
+      }
+      if (get().guideCol != null && col !== get().guideCol) {
+        deny(get, set, ftueWrong || "Drop on the glowing column.", col);
+        return;
+      }
+    }
     let top = columnTop(session.board, col);
     if (top === 0) {
       let hole = false;
@@ -222,14 +352,17 @@ export const useGame = create<GameStore>((set, get) => ({
       return;
     }
     if (resolving || falling) return;
-    const gem = session.queue.shift()!;
-    session.queue.push(randomGem(session.spec));
+    const gem = session.queue.shift();
+    if (!gem) return;
+    if (!session.spec.ftue) session.queue.push(randomGem(session.spec));
+    else if (session.queue.length === 0) session.queue.push({ ...gem });
     const row = top - 1;
-    session.moves--;
     session.drops++;
+    if (!session.spec.ftue) session.moves--;
     save.stats.drops++;
     haptic(8, save.settings.haptic);
     beep(420 + gem.color * 40, 0.08, "sine", 0.05, undefined, save.settings.sfx);
+    if (coachTimer) window.clearTimeout(coachTimer);
     set({
       session: cloneSession(session),
       resolving: true,
@@ -250,8 +383,22 @@ export const useGame = create<GameStore>((set, get) => ({
     if (!get().session?.won && !get().session?.lost) set({ resolving: false });
   },
   crushAt: async (c, r) => {
-    const { session, save } = get();
+    const { session, save, ftueHold, guideCell } = get();
     if (!session || session.tools.crush <= 0) return;
+    if (session.spec.ftue) {
+      if (ftueHold) {
+        get().ftueAdvance();
+        return;
+      }
+      if (ftueAction !== "crush") {
+        deny(get, set, "Crush isn’t the lesson right now");
+        return;
+      }
+      if (guideCell && (guideCell.c !== c || guideCell.r !== r)) {
+        deny(get, set, "Tap the marked ice", c);
+        return;
+      }
+    }
     const cell = session.board[r][c];
     if (!cell) {
       deny(get, set, "No light there to crush", c);
@@ -268,11 +415,27 @@ export const useGame = create<GameStore>((set, get) => ({
     haptic(12, save.settings.haptic);
     set({ session: cloneSession(session), selectingCrush: false, resolving: true, lastBursts: [{ r, c, color }] });
     await resolveBoard(get, set, [{ r, c, color }]);
+    if (get().session?.spec.ftue) return;
     if (!get().session?.won && !get().session?.lost) set({ resolving: false });
   },
   shuffle: () => {
-    const { session, resolving } = get();
+    const { session, resolving, ftueHold } = get();
     if (!session || session.tools.shuffle <= 0 || resolving) return;
+    if (session.spec.ftue) {
+      if (ftueHold || ftueAction !== "shuffle") return;
+      session.tools.shuffle = 0;
+      session.queue = [{ color: 0, type: "orb", special: null, hp: 1 }];
+      beep(520, 0.1, "sine", 0.05, undefined, get().save.settings.sfx);
+      const hold = HOLD.shuffle;
+      set({
+        session: cloneSession(session),
+        coachTitle: hold.title,
+        coachBody: hold.body,
+        ftueHold: true,
+        guideCol: null,
+      });
+      return;
+    }
     session.tools.shuffle--;
     session.queue = session.queue.map(() => randomGem(session.spec));
     beep(520, 0.1, "sine", 0.05, undefined, get().save.settings.sfx);
@@ -290,18 +453,36 @@ export const useGame = create<GameStore>((set, get) => ({
     if (!get().session?.won && !get().session?.lost) set({ resolving: false });
   },
   toggleCrush: () => {
-    const { session, resolving } = get();
+    const { session, resolving, ftueHold } = get();
     if (!session || session.tools.crush <= 0 || resolving) return;
+    if (session.spec.ftue) {
+      if (ftueHold || ftueAction !== "crush") return;
+      set({
+        selectingCrush: true,
+        hint: null,
+        coachTitle: "Crush",
+        coachBody: "Now tap the marked ice.",
+      });
+      return;
+    }
     set({ selectingCrush: !get().selectingCrush });
   },
   retry: () => {
     const s = get().session;
     if (!s) return;
-    get().start(s.spec.level, s.spec.mode);
+    if (s.spec.ftue) get().startTutorial();
+    else get().start(s.spec.level, s.spec.mode);
   },
   next: () => {
     const s = get().session;
     if (!s) return;
+    if (s.spec.ftue) {
+      const save = get().save;
+      save.stats.plays = Math.max(1, save.stats.plays);
+      persistSave(save);
+      set({ save: { ...save, stats: { ...save.stats } }, screen: "menu", session: null });
+      return;
+    }
     if (s.spec.mode === "daily") {
       set({ screen: "atelier" });
       return;

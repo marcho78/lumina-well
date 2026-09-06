@@ -96,6 +96,82 @@ export function gravity(board: (Orb | null)[][]) {
   }
 }
 
+export type CueGroup = {
+  kind: "burst" | "cascade" | "row" | "nova" | "crush";
+  cells: Cell[];
+  falls?: { from: Cell; to: Cell }[];
+};
+
+export function previewCues(
+  session: Session,
+  guideCol: number | null,
+  guideCell: { r: number; c: number } | null,
+): CueGroup[] {
+  if (guideCell) return [{ kind: "crush", cells: [guideCell] }];
+  if (guideCol == null || !session.queue[0]) return [];
+  const gem = session.queue[0];
+  const top = columnTop(session.board, guideCol);
+  if (top === 0) return [];
+  const row = top - 1;
+  const board = session.board.map((line) => line.slice());
+  board[row][guideCol] = { ...gem };
+
+  if (gem.special === "row") {
+    const cells: Cell[] = [];
+    for (let c = 0; c < COLS; c++) if (board[row][c]) cells.push({ r: row, c });
+    return [{ kind: "row", cells }];
+  }
+  if (gem.special === "col") {
+    const cells: Cell[] = [];
+    for (let r = 0; r < ROWS; r++) if (board[r][guideCol]) cells.push({ r, c: guideCol });
+    return [{ kind: "row", cells }];
+  }
+  if (gem.special === "nova") {
+    const cells: Cell[] = [];
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        if (board[r][c]?.color === gem.color) cells.push({ r, c });
+      }
+    }
+    return [{ kind: "nova", cells }];
+  }
+
+  const burst = findMatches(board).flat();
+  if (!burst.length) return [];
+  const n = burst.length;
+  const groups: CueGroup[] = [{ kind: n >= 5 ? "nova" : n >= 4 ? "row" : "burst", cells: burst }];
+
+  const pre = board.map((line) => line.slice());
+  for (const t of burst) pre[t.r][t.c] = null;
+  const origin = new Map<object, Cell>();
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const orb = pre[r][c];
+      if (orb) origin.set(orb, { r, c });
+    }
+  }
+  const post = pre.map((line) => line.slice());
+  gravity(post);
+  const cascadeAfter = findMatches(post).flat();
+  if (cascadeAfter.length) {
+    const cells: Cell[] = [];
+    const falls: { from: Cell; to: Cell }[] = [];
+    const seen = new Set<string>();
+    for (const t of cascadeAfter) {
+      const orb = post[t.r][t.c];
+      const from = orb ? origin.get(orb) : undefined;
+      if (!from) continue;
+      const key = `${from.r},${from.c}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      cells.push(from);
+      if (from.r !== t.r || from.c !== t.c) falls.push({ from, to: t });
+    }
+    if (cells.length) groups.push({ kind: "cascade", cells, falls });
+  }
+  return groups;
+}
+
 export function columnTop(board: (Orb | null)[][], c: number) {
   for (let r = 0; r < ROWS; r++) if (board[r][c]) return r;
   return ROWS;
@@ -165,13 +241,23 @@ function fillBoard(spec: LevelSpec) {
   return b;
 }
 
-export function createSession(level: number, mode: Mode, save: SaveState): Session {
+export function createSession(level: number, mode: Mode, save: SaveState, tutorial = false): Session {
   const spec = specFor(level, mode);
-  const preview = 2 + (save.upgrades.preview > 0 ? 1 : 0);
-  return {
+  const ftue = tutorial || (save.ftue !== "done" && mode === "campaign" && level === 1);
+  if (ftue) {
+    spec.ice = false;
+    spec.stone = false;
+    spec.colors = 4;
+    spec.target = 9999;
+    spec.moves = 12;
+    spec.fill = 0;
+    spec.ftue = true;
+  }
+  const preview = ftue ? 1 : 2 + (save.upgrades.preview > 0 ? 1 : 0);
+  const session: Session = {
     spec,
-    board: fillBoard(spec),
-    queue: Array.from({ length: preview }, () => randomGem(spec)),
+    board: ftue ? emptyBoard() : fillBoard(spec),
+    queue: ftue ? [makeOrb(3)] : Array.from({ length: preview }, () => randomGem(spec)),
     score: 0,
     moves: spec.moves,
     combo: 0,
@@ -180,12 +266,16 @@ export function createSession(level: number, mode: Mode, save: SaveState): Sessi
     drops: 0,
     won: false,
     lost: false,
-    tools: {
-      shuffle: 2 + save.upgrades.startShuffle,
-      crush: 1 + save.upgrades.startCrush,
-      nova: save.upgrades.startNova,
-    },
+    tools: ftue
+      ? { shuffle: 0, crush: 0, nova: 0 }
+      : {
+          shuffle: 2 + save.upgrades.startShuffle,
+          crush: 1 + save.upgrades.startCrush,
+          nova: save.upgrades.startNova,
+        },
+    ftueBeat: ftue ? "next" : undefined,
   };
+  return session;
 }
 
 function chipNeighbors(board: (Orb | null)[][], hit: Set<string>) {
@@ -297,6 +387,7 @@ export function detonate(session: Session, r: number, c: number, kind: Special, 
 
 export function checkEnd(session: Session) {
   if (session.won || session.lost) return;
+  if (session.spec.ftue) return;
   if (session.score >= session.spec.target) session.won = true;
   else if (session.moves <= 0) session.lost = true;
 }

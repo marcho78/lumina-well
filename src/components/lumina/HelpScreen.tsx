@@ -156,7 +156,7 @@ const STEPS = [
 export function HelpScreen() {
   const go = useGame((s) => s.go);
   const prev = useGame((s) => s.prevScreen);
-  const start = useGame((s) => s.start);
+  const startTutorial = useGame((s) => s.startTutorial);
   const save = useGame((s) => s.save);
   const [step, setStep] = useState(0);
   const last = step === STEPS.length - 1;
@@ -202,7 +202,7 @@ export function HelpScreen() {
             type="button"
             className="home-cta"
             onClick={() => {
-              if (backTo === "menu" && save.stats.plays === 0) start(1, "campaign");
+              if (backTo === "menu" && save.stats.plays === 0) startTutorial();
               else go(backTo);
             }}
           >
@@ -214,6 +214,9 @@ export function HelpScreen() {
           </button>
         )}
       </div>
+      <button type="button" className="ceremony-ghost mt-2 w-full" onClick={() => startTutorial()}>
+        Practice in a well
+      </button>
     </section>
   );
 }

@@ -33,6 +33,7 @@ export type LevelSpec = {
   mode: Mode;
   level: number;
   seed: number;
+  ftue?: boolean;
 };
 
 export type Session = {
@@ -48,6 +49,7 @@ export type Session = {
   won: boolean;
   lost: boolean;
   tools: { shuffle: number; crush: number; nova: number };
+  ftueBeat?: string;
 };
 
 export type SaveState = {
@@ -66,6 +68,7 @@ export type SaveState = {
   settings: { sfx: boolean; haptic: boolean; shake: boolean };
   stats: { plays: number; clears: number; bestCombo: number; drops: number };
   daily: { key: string; cleared: boolean };
+  ftue: "pending" | "done";
 };
 
 export type UpgradeDef = {

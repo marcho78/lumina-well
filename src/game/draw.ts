@@ -1,6 +1,6 @@
 import { COLS, COLORS, ROWS } from "./constants";
 import type { Orb, Session } from "./types";
-import { columnTop } from "./engine";
+import { columnTop, previewCues, type CueGroup } from "./engine";
 
 export function roundRect(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
   g.beginPath();
@@ -40,6 +40,98 @@ function markSpecial(g: CanvasRenderingContext2D, x: number, y: number, rad: num
     g.lineTo(x - s * 0.7, y + s * 0.7);
   }
   g.stroke();
+}
+
+function drawCueGroups(ctx: CanvasRenderingContext2D, groups: CueGroup[], cell: number, rad: number) {
+  if (!groups.length) return;
+  const t = performance.now();
+  const pulse = 0.5 + 0.5 * (0.5 + 0.5 * Math.sin(t / 260));
+  const bob = 4 + 3 * Math.sin(t / 220);
+
+  for (const group of groups) {
+    if (!group.cells.length) continue;
+    ctx.save();
+    if (group.kind === "row") {
+      const r = group.cells[0].r;
+      const sameRow = group.cells.every((c) => c.r === r);
+      if (sameRow) {
+        const minC = Math.min(...group.cells.map((c) => c.c));
+        const maxC = Math.max(...group.cells.map((c) => c.c));
+        const y = r * cell + cell / 2;
+        ctx.strokeStyle = `rgba(240,217,168,${0.35 + pulse * 0.4})`;
+        ctx.lineWidth = Math.max(3, cell * 0.08);
+        ctx.lineCap = "round";
+        ctx.shadowColor = "rgba(217,184,120,0.55)";
+        ctx.shadowBlur = 14;
+        ctx.beginPath();
+        ctx.moveTo(minC * cell + cell * 0.18, y);
+        ctx.lineTo(maxC * cell + cell * 0.82, y);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      }
+    }
+
+    for (const { r, c } of group.cells) {
+      const cx = c * cell + cell / 2;
+      const cy = r * cell + cell / 2;
+      ctx.beginPath();
+      ctx.arc(cx, cy, rad + (group.kind === "cascade" ? 7 : 5), 0, Math.PI * 2);
+      if (group.kind === "cascade") {
+        ctx.strokeStyle = `rgba(232,176,176,${0.45 + pulse * 0.4})`;
+        ctx.lineWidth = 2.5;
+        ctx.setLineDash([5, 4]);
+      } else if (group.kind === "crush") {
+        ctx.strokeStyle = `rgba(240,217,168,${0.7 + pulse * 0.3})`;
+        ctx.lineWidth = 2.5;
+        ctx.setLineDash([5, 4]);
+      } else {
+        ctx.strokeStyle = `rgba(240,217,168,${0.55 + pulse * 0.45})`;
+        ctx.lineWidth = 3;
+        ctx.setLineDash([]);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    if (group.kind === "nova") {
+      for (const { r, c } of group.cells) {
+        const cx = c * cell + cell / 2;
+        const cy = r * cell + cell / 2;
+        ctx.beginPath();
+        ctx.arc(cx, cy, rad + 9, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(240,217,168,${0.18 + pulse * 0.2})`;
+        ctx.lineWidth = 6;
+        ctx.stroke();
+      }
+    }
+
+    if (group.falls) {
+      ctx.setLineDash([4, 4]);
+      ctx.lineDashOffset = -(t / 30) % 8;
+      ctx.strokeStyle = `rgba(232,176,176,${0.55 + pulse * 0.35})`;
+      ctx.fillStyle = `rgba(232,176,176,${0.7 + pulse * 0.3})`;
+      ctx.lineWidth = 2;
+      for (const { from, to } of group.falls) {
+        const x = from.c * cell + cell / 2;
+        const y1 = from.r * cell + cell * 0.78;
+        const y2 = to.r * cell + cell * 0.18 + bob;
+        ctx.beginPath();
+        ctx.moveTo(x, y1);
+        ctx.lineTo(x, y2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(x - 7, y2 - 9);
+        ctx.lineTo(x, y2);
+        ctx.lineTo(x + 7, y2 - 9);
+        ctx.closePath();
+        ctx.fill();
+        ctx.setLineDash([4, 4]);
+      }
+      ctx.setLineDash([]);
+    }
+    ctx.restore();
+  }
 }
 
 export function drawOrb(g: CanvasRenderingContext2D, x: number, y: number, rad: number, orb: Orb, ghost = false) {
@@ -113,6 +205,8 @@ export function drawBoard(
   selectingCrush: boolean,
   animating: boolean,
   flashCol = -1,
+  guideCol = -1,
+  guideCell: { r: number; c: number } | null = null,
 ) {
   const w = COLS * cell;
   const h = ROWS * cell;
@@ -124,6 +218,8 @@ export function drawBoard(
   ctx.lineWidth = 1.5;
   ctx.stroke();
   const rad = Math.max(6, cell / 2 - pad);
+  const cues = previewCues(session, guideCol >= 0 ? guideCol : null, guideCell);
+  const marked = new Set(cues.flatMap((g) => g.cells.map((t) => `${t.r},${t.c}`)));
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
       const x = c * cell;
@@ -138,11 +234,25 @@ export function drawBoard(
     ctx.fillStyle = "rgba(212,122,122,0.08)";
     ctx.fillRect(0, 0, w, h);
   }
+  if (guideCol >= 0 && guideCol < COLS) {
+    ctx.fillStyle = "rgba(217,184,120,0.12)";
+    ctx.fillRect(guideCol * cell, 0, cell, ROWS * cell);
+  }
   if (flashCol >= 0 && flashCol < COLS) {
     ctx.fillStyle = "rgba(212,122,122,0.28)";
     ctx.fillRect(flashCol * cell, 0, cell, ROWS * cell);
   }
-  const ghostCol = hoverCol >= 0 ? hoverCol : 2;
+  if (marked.size) {
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        if (marked.has(`${r},${c}`)) continue;
+        ctx.fillStyle = "rgba(8,7,6,0.42)";
+        ctx.fillRect(c * cell, r * cell, cell, cell);
+      }
+    }
+  }
+  drawCueGroups(ctx, cues, cell, rad);
+  const ghostCol = guideCol >= 0 ? guideCol : hoverCol >= 0 ? hoverCol : 2;
   if (!animating && !session.won && !session.lost && !selectingCrush && session.queue[0]) {
     const top = columnTop(session.board, ghostCol);
     if (top > 0) {
@@ -161,5 +271,16 @@ export function drawBoard(
       ctx.stroke();
       ctx.setLineDash([]);
     }
+  }
+  if (guideCell) {
+    const cx = guideCell.c * cell + cell / 2;
+    const cy = guideCell.r * cell + cell / 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, rad + 4, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(232,207,150,0.95)";
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([5, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
   }
 }

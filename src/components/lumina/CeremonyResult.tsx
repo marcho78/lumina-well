@@ -45,8 +45,9 @@ export function CeremonyResult() {
   const retry = useGame((s) => s.retry);
   const go = useGame((s) => s.go);
   if (!session || !result) return null;
-  const title =
-    session.spec.mode === "daily"
+  const title = session.spec.ftue
+    ? "The First Drop"
+    : session.spec.mode === "daily"
       ? "Daily Well"
       : session.spec.mode === "endless"
         ? `Endless ${session.spec.level}`
@@ -54,8 +55,13 @@ export function CeremonyResult() {
   const win = result.win;
   const stars = Math.max(0, Math.min(3, result.stars));
   const grade = ["No Stars", "One Star", "Two Stars", "Three Stars"][stars];
-  const cta =
-    session.spec.mode === "daily" ? "Atelier ▸" : win ? "Next Well ▸" : "Try Again ▸";
+  const cta = session.spec.ftue
+    ? "Continue ▸"
+    : session.spec.mode === "daily"
+      ? "Atelier ▸"
+      : win
+        ? "Next Well ▸"
+        : "Try Again ▸";
   return (
     <section className="ceremony-veil relative z-10 flex min-h-0 flex-1 items-center justify-center px-4">
       <div className={win ? "ceremony-frame" : "ceremony-frame dark"}>
@@ -66,7 +72,9 @@ export function CeremonyResult() {
 
           <div className="ceremony-kicker">
             <i />
-            <span>{win ? "✦  Well Cleared  ✦" : "✦  The Well Went Dark  ✦"}</span>
+            <span>
+              {session.spec.ftue ? "✦  Lesson Complete  ✦" : win ? "✦  Well Cleared  ✦" : "✦  The Well Went Dark  ✦"}
+            </span>
             <i />
           </div>
 
@@ -119,14 +127,20 @@ export function CeremonyResult() {
             <button type="button" className="ceremony-cta" onClick={next}>
               {cta}
             </button>
-            <div className="ceremony-second">
+            {session.spec.ftue ? (
               <button type="button" className="ceremony-ghost" onClick={retry}>
                 ↻  Retry
               </button>
-              <button type="button" className="ceremony-ghost" onClick={() => go("realms")}>
-                ❖  Realms
-              </button>
-            </div>
+            ) : (
+              <div className="ceremony-second">
+                <button type="button" className="ceremony-ghost" onClick={retry}>
+                  ↻  Retry
+                </button>
+                <button type="button" className="ceremony-ghost" onClick={() => go("realms")}>
+                  ❖  Realms
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>

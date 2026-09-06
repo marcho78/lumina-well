@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { COLS, COLORS, ROWS } from "@/game/constants";
 import { drawBoard, drawOrb } from "@/game/draw";
 import type { BurstEvent } from "@/game/engine";
@@ -14,9 +14,13 @@ export function BoardCanvas({
   bursts,
   falling,
   flashCol,
+  guideCol = null,
+  guideCell = null,
   onDrop,
   onCrush,
   onLanded,
+  children,
+  className,
 }: {
   session: Session;
   selectingCrush: boolean;
@@ -24,9 +28,13 @@ export function BoardCanvas({
   bursts: BurstEvent[];
   falling: Falling | null;
   flashCol: number | null;
+  guideCol?: number | null;
+  guideCell?: { r: number; c: number } | null;
   onDrop: (col: number) => void;
   onCrush: (col: number, row: number) => void;
   onLanded: () => void;
+  children?: ReactNode;
+  className?: string;
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const boardRef = useRef<HTMLCanvasElement>(null);
@@ -41,6 +49,8 @@ export function BoardCanvas({
   const resolvingRef = useRef(resolving);
   const fallingRef = useRef(falling);
   const flashRef = useRef(flashCol);
+  const guideRef = useRef(guideCol);
+  const guideCellRef = useRef(guideCell);
   const onDropRef = useRef(onDrop);
   const onCrushRef = useRef(onCrush);
   const onLandedRef = useRef(onLanded);
@@ -51,6 +61,8 @@ export function BoardCanvas({
   resolvingRef.current = resolving;
   fallingRef.current = falling;
   flashRef.current = flashCol;
+  guideRef.current = guideCol;
+  guideCellRef.current = guideCell;
   onDropRef.current = onDrop;
   onCrushRef.current = onCrush;
   onLandedRef.current = onLanded;
@@ -99,6 +111,8 @@ export function BoardCanvas({
         crushRef.current,
         resolvingRef.current,
         flashRef.current ?? -1,
+        guideRef.current ?? -1,
+        guideCellRef.current,
       );
       const fall = fallingRef.current;
       if (fall) {
@@ -245,10 +259,11 @@ export function BoardCanvas({
   }, [bursts]);
 
   return (
-    <div ref={wrapRef} className="relative mx-auto flex h-full w-full max-w-md items-center justify-center">
-      <div className="relative">
+    <div ref={wrapRef} className="play-stage">
+      <div className={className ? `play-well ${className}` : "play-well"}>
         <canvas ref={boardRef} className="touch-none block" />
         <canvas ref={fxRef} className="pointer-events-none absolute inset-0" />
+        {children}
       </div>
     </div>
   );

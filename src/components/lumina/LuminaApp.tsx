@@ -20,6 +20,7 @@ import { ReelNumber } from "@/components/lumina/Juice";
 import { OrbChip } from "@/components/lumina/OrbChip";
 import { SparkField } from "@/components/lumina/SparkField";
 import { CAMPAIGN, COLORS, LEVELS_PER_REALM, REALMS, UPGRADES } from "@/game/constants";
+import { FTUE_ORDER, ftueIndex, qcLessons } from "@/game/ftue";
 import { dailyLevel, dayKey } from "@/game/rng";
 import { realmName, realmUnlocked, starsOfRealm, useGame } from "@/game/store";
 import type { Orb, Screen } from "@/game/types";
@@ -35,19 +36,36 @@ function ShardMark({ n, className }: { n: number; className?: string }) {
   );
 }
 
-function NextTray({ queue, caption, danger = false }: { queue: Orb[]; caption?: string | null; danger?: boolean }) {
+function NextTray({
+  queue,
+  caption,
+  danger = false,
+  highlight = false,
+  onActivate,
+}: {
+  queue: Orb[];
+  caption?: string | null;
+  danger?: boolean;
+  highlight?: boolean;
+  onActivate?: () => void;
+}) {
   const next = queue[0];
   const rest = queue.slice(1);
   return (
     <div className="play-tray">
       <div className="flex items-end justify-center gap-5">
         {next && (
-          <div className="flex flex-col items-center gap-1">
-            <span className="play-cap">Next</span>
-            <div className={cn("play-orb next", caption && !danger && "lumina-pulse")}>
+          <button
+            type="button"
+            className="flex flex-col items-center gap-1"
+            onClick={onActivate}
+            disabled={!onActivate}
+          >
+            <span className={highlight ? "play-cap on" : "play-cap"}>Next</span>
+            <div className={cn("play-orb next", (highlight || (caption && !danger)) && "lumina-pulse")}>
               <OrbChip orb={next} size={52} />
             </div>
-          </div>
+          </button>
         )}
         {rest.map((orb, i) => (
           <div key={`${i}-${orb.color}-${orb.special ?? "n"}`} className="flex flex-col items-center gap-1">
@@ -115,12 +133,18 @@ function WellEmblem({ className }: { className?: string }) {
 
 function BootScreen() {
   const go = useGame((s) => s.go);
+  const startTutorial = useGame((s) => s.startTutorial);
+  const ftue = useGame((s) => s.save.ftue);
+  const enter = () => {
+    if (ftue !== "done") startTutorial();
+    else go("menu");
+  };
   useEffect(() => {
-    const t = window.setTimeout(() => go("menu"), 1400);
+    const t = window.setTimeout(enter, 700);
     return () => window.clearTimeout(t);
-  }, [go]);
+  }, [ftue]);
   return (
-    <ScreenShell className="home cursor-pointer items-center justify-center" onClick={() => go("menu")}>
+    <ScreenShell className="home cursor-pointer items-center justify-center" onClick={enter}>
       <span className="home-mote a" />
       <span className="home-mote b" />
       <WellEmblem className="boot-well" />
@@ -137,6 +161,7 @@ function BootScreen() {
 function MenuScreen() {
   const save = useGame((s) => s.save);
   const start = useGame((s) => s.start);
+  const startTutorial = useGame((s) => s.startTutorial);
   const go = useGame((s) => s.go);
   const cleared = Object.values(save.stars).filter(Boolean).length;
   const starSum = Object.values(save.stars).reduce((a, b) => a + b, 0);
@@ -216,7 +241,7 @@ function MenuScreen() {
           <button type="button" onClick={() => go("atelier")}>
             ◆  Workshop
           </button>
-          <button type="button" onClick={() => go("help")}>
+          <button type="button" onClick={() => startTutorial()}>
             How to Play
           </button>
         </div>
@@ -348,7 +373,6 @@ function LevelsScreen() {
 
 function PlayScreen() {
   const session = useGame((s) => s.session);
-  const save = useGame((s) => s.save);
   const go = useGame((s) => s.go);
   const drop = useGame((s) => s.drop);
   const crushAt = useGame((s) => s.crushAt);
@@ -364,60 +388,110 @@ function PlayScreen() {
   const hint = useGame((s) => s.hint);
   const flashCol = useGame((s) => s.flashCol);
   const land = useGame((s) => s.land);
+  const coachTitle = useGame((s) => s.coachTitle);
+  const coachBody = useGame((s) => s.coachBody);
+  const guideCol = useGame((s) => s.guideCol);
+  const guideCell = useGame((s) => s.guideCell);
+  const ftueHold = useGame((s) => s.ftueHold);
+  const ftueAdvance = useGame((s) => s.ftueAdvance);
+  const shake = useGame((s) => s.save.settings.shake);
   const onDrop = useCallback((col: number) => void drop(col), [drop]);
   const onCrush = useCallback((c: number, r: number) => void crushAt(c, r), [crushAt]);
   const onLanded = useCallback(() => void land(), [land]);
   if (!session) return null;
-  const pct = Math.min(100, (session.score / session.spec.target) * 100);
-  const title =
-    session.spec.mode === "daily"
+  const ftue = Boolean(session.spec.ftue);
+  const lesson = ftueIndex(session.ftueBeat as import("@/game/ftue").FtueBeat);
+  const lessonMax = FTUE_ORDER.length - 1;
+  const pct = ftue
+    ? Math.min(100, (Math.max(1, lesson) / lessonMax) * 100)
+    : Math.min(100, (session.score / session.spec.target) * 100);
+  const title = ftue
+    ? coachTitle || "The First Drop"
+    : session.spec.mode === "daily"
       ? "Daily Well"
       : session.spec.mode === "endless"
         ? `Endless ${session.spec.level}`
         : `${realmName(session.spec.level)} ${((session.spec.level - 1) % LEVELS_PER_REALM) + 1}`;
+  const caption = ftue
+    ? null
+    : hint
+      ? hint
+      : selectingCrush
+        ? "Tap the marked ice"
+        : session.drops < 3
+          ? "Tap a column — Next lands on the dashed ring."
+          : null;
+  const teachHud = ftue && session.ftueBeat === "hud";
+  const showCrush = !ftue || session.ftueBeat === "crush";
+  const showShuffle = !ftue || session.ftueBeat === "shuffle";
+  const showTools = !ftue || session.ftueBeat === "crush" || session.ftueBeat === "shuffle";
   return (
     <ScreenShell className="home play px-4">
       <header className="play-hud">
-        <button type="button" className="home-icon" aria-label="Pause" onClick={() => go("pause")}>
-          Ⅱ
-        </button>
-        <div className="min-w-0 flex-1">
-          <div className="play-title">{title}</div>
-          <div className="play-rail">
-            <i style={{ width: `${pct}%` }} />
+        <div className="play-title">{title}</div>
+        <div className={teachHud ? "play-rail teach" : "play-rail"}>
+          <i style={{ width: `${pct}%` }} />
+        </div>
+        <div className="play-hud-row">
+          <button type="button" className="home-icon" aria-label="Pause" onClick={() => go("pause")}>
+            Ⅱ
+          </button>
+          <div className={teachHud ? "play-score teach" : "play-score"}>
+            {ftue ? (
+              <>
+                <b>
+                  {Math.max(1, lesson)} / {lessonMax}
+                </b>
+                <span> Lesson</span>
+              </>
+            ) : (
+              <>
+                <b>{session.score.toLocaleString()}</b>
+                <span> / {session.spec.target.toLocaleString()}</span>
+              </>
+            )}
           </div>
-          <div className="play-score">
-            <b>{session.score.toLocaleString()}</b>
-            <span> / {session.spec.target.toLocaleString()}</span>
+          <div className={cn("play-moves", session.moves <= 5 && "low", teachHud && "teach")}>
+            {session.moves}
+            <small>Moves</small>
           </div>
         </div>
-        <div className={cn("play-moves", session.moves <= 5 && "low")}>{session.moves}</div>
       </header>
       <NextTray
         queue={session.queue}
         danger={Boolean(hint)}
-        caption={
-          hint
-            ? hint
-            : selectingCrush
-              ? "Tap a light to crush it"
-              : session.drops < 3
-                ? "Tap a column — Next lands on the dashed ring."
-                : null
+        caption={caption}
+        highlight={ftue && !ftueHold && session.ftueBeat !== "crush" && session.ftueBeat !== "shuffle" && session.ftueBeat !== "hud"}
+        onActivate={
+          ftue && !resolving
+            ? () => {
+                if (ftueHold) ftueAdvance();
+                else if (session.ftueBeat === "crush" || session.ftueBeat === "shuffle") return;
+                else if (guideCol != null) void drop(guideCol);
+              }
+            : undefined
         }
       />
-      <div className={cn("play-well", save.settings.shake && resolving && session.combo > 1 && "shake-well")}>
-        <BoardCanvas
-          session={session}
-          selectingCrush={selectingCrush}
-          resolving={resolving}
-          bursts={lastBursts}
-          falling={falling}
-          flashCol={flashCol}
-          onDrop={onDrop}
-          onCrush={onCrush}
-          onLanded={onLanded}
-        />
+      {ftue && (hint || coachBody) ? (
+        <div className={hint ? "ftue-coach danger" : "ftue-coach"}>
+          <span>{hint ? "Can't drop there" : coachTitle}</span>
+          <p>{hint || coachBody}</p>
+        </div>
+      ) : null}
+      <BoardCanvas
+        session={session}
+        selectingCrush={selectingCrush}
+        resolving={resolving}
+        bursts={lastBursts}
+        falling={falling}
+        flashCol={flashCol}
+        guideCol={guideCol}
+        guideCell={guideCell}
+        onDrop={onDrop}
+        onCrush={onCrush}
+        onLanded={onLanded}
+        className={shake && resolving && session.combo > 1 ? "shake-well" : undefined}
+      >
         {floats.map((f) => (
           <span
             key={f.id}
@@ -428,27 +502,53 @@ function PlayScreen() {
           </span>
         ))}
         {banner && <div className="combo-banner pointer-events-none absolute inset-x-0 top-8 text-center">{banner}</div>}
-      </div>
-      <footer className="play-tools">
-        <button type="button" className="play-tool" disabled={session.tools.shuffle <= 0 || resolving} onClick={shuffle} aria-label="Shuffle queue">
-          <span>↻</span>
-          <em>{session.tools.shuffle}</em>
-        </button>
+        {ftueHold && !hint ? (
+          <div className="ftue-hold" onClick={ftueAdvance} role="presentation">
+            <span className="ftue-next">Next ▸</span>
+          </div>
+        ) : null}
+      </BoardCanvas>
+      {showTools && (
+      <footer className={showCrush && showShuffle && !ftue ? "play-tools" : "play-tools one"}>
+        {showShuffle && (
         <button
           type="button"
-          className={selectingCrush ? "play-tool on" : "play-tool"}
+          className={ftue && session.ftueBeat === "shuffle" && !ftueHold ? "play-tool teach" : "play-tool"}
+          disabled={session.tools.shuffle <= 0 || resolving}
+          onClick={shuffle}
+        >
+          <span>↻</span>
+          <strong>Shuffle</strong>
+          <em>{session.tools.shuffle}</em>
+        </button>
+        )}
+        {showCrush && (
+        <button
+          type="button"
+          className={
+            selectingCrush
+              ? "play-tool on"
+              : ftue && session.ftueBeat === "crush" && !ftueHold
+                ? "play-tool teach"
+                : "play-tool"
+          }
           disabled={session.tools.crush <= 0 || resolving}
           onClick={toggleCrush}
-          aria-label="Crush a light"
         >
           <span>+</span>
+          <strong>Crush</strong>
           <em>{session.tools.crush}</em>
         </button>
-        <button type="button" className="play-tool" disabled={session.tools.nova <= 0 || resolving} onClick={() => void fireNova()} aria-label="Nova">
+        )}
+        {!ftue && (
+        <button type="button" className="play-tool" disabled={session.tools.nova <= 0 || resolving} onClick={() => void fireNova()}>
           <span>✦</span>
+          <strong>Nova</strong>
           <em>{session.tools.nova}</em>
         </button>
+        )}
       </footer>
+      )}
     </ScreenShell>
   );
 }
@@ -608,7 +708,27 @@ export function LuminaApp() {
     (window as unknown as { __LUMINA: unknown }).__LUMINA = {
       getSession: () => useGame.getState().session,
       start: (level: number, mode: "campaign" | "endless" | "daily") => useGame.getState().start(level, mode),
-      drop: (col: number) => useGame.getState().drop(col),
+      startTutorial: () => useGame.getState().startTutorial(),
+      ftueAdvance: () => useGame.getState().ftueAdvance(),
+      qc: () => qcLessons(),
+      drop: (col: number) => {
+        void useGame.getState().drop(col);
+      },
+      crush: (c: number, r: number) => {
+        void useGame.getState().crushAt(c, r);
+      },
+      shuffle: () => useGame.getState().shuffle(),
+      toggleCrush: () => useGame.getState().toggleCrush(),
+      ftue: () => {
+        const s = useGame.getState();
+        return {
+          beat: s.session?.ftueBeat,
+          hold: s.ftueHold,
+          title: s.coachTitle,
+          screen: s.screen,
+          tools: s.session?.tools,
+        };
+      },
       result: (win = true, stars = 3) => {
         const st = useGame.getState();
         if (!st.session) st.start(1, "campaign");

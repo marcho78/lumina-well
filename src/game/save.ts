@@ -15,6 +15,7 @@ export function defaultSave(): SaveState {
     settings: { sfx: true, haptic: true, shake: true },
     stats: { plays: 0, clears: 0, bestCombo: 0, drops: 0 },
     daily: { key: "", cleared: false },
+    ftue: "pending",
   };
 }
 
@@ -22,7 +23,7 @@ export function loadSave(): SaveState {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return defaultSave();
-    const parsed = JSON.parse(raw) as Partial<SaveState>;
+    const parsed = JSON.parse(raw) as Partial<SaveState> & { stats?: { plays?: number } };
     return {
       ...defaultSave(),
       ...parsed,
@@ -31,6 +32,7 @@ export function loadSave(): SaveState {
       stats: { ...defaultSave().stats, ...parsed.stats },
       daily: { ...defaultSave().daily, ...parsed.daily },
       stars: parsed.stars ?? {},
+      ftue: parsed.ftue ?? (parsed.stats?.plays ? "done" : "pending"),
       version: VERSION,
     };
   } catch {
